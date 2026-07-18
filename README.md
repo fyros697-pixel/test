@@ -125,8 +125,8 @@ chmod 755 data
 ```
 
 ### 3. Access the App
-- **Admin Dashboard**: `https://admin.wimi-elektro.de/admin/login.php`
-- **Worker Dashboard**: `https://wimi-elektro.de/worker/login.php`
+- **Admin Dashboard**: `http://admin.wimi-elektro.de/admin/login.php`
+- **Worker Dashboard**: `http://wimi-elektro.de/worker/login.php`
 
 ### 4. Default Credentials
 - Username: `admin`
@@ -193,9 +193,8 @@ Simply download the `/data` folder via FTP to backup all data
 
 ⚠️ Recommendations:
 1. Change default admin password
-2. Use HTTPS only
-3. Protect `/data` folder (add .htaccess for Apache)
-4. Regular backups
+2. Regular backups
+3. Keep `/data` folder secure
 
 ## Limitations
 
@@ -212,6 +211,7 @@ Simply download the `/data` folder via FTP to backup all data
 ✨ Minimal server requirements
 ✨ Zero dependencies
 ✨ Works on any PHP hosting
+✨ Works with HTTP (no HTTPS required)
 
 ## Support
 
