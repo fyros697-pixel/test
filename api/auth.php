@@ -2,11 +2,13 @@
 // Authentication helper
 
 function startSecureSession() {
-    session_start();
-    // Prevent session fixation
-    if (!isset($_SESSION['initialized'])) {
-        session_regenerate_id(true);
-        $_SESSION['initialized'] = true;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+        // Prevent session fixation
+        if (!isset($_SESSION['initialized'])) {
+            session_regenerate_id(true);
+            $_SESSION['initialized'] = true;
+        }
     }
 }
 
@@ -27,14 +29,14 @@ function requireWorkerLogin() {
 }
 
 function adminLogout() {
-    session_start();
+    startSecureSession();
     session_destroy();
     header('Location: /admin/login.php');
     exit();
 }
 
 function workerLogout() {
-    session_start();
+    startSecureSession();
     session_destroy();
     header('Location: /worker/login.php');
     exit();

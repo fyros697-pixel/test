@@ -11,19 +11,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
 
     if ($username && $password) {
-        $stmt = $db->getConnection()->prepare('SELECT * FROM admin WHERE username = :username');
-        $stmt->bindValue(':username', $username, SQLITE3_TEXT);
-        $result = $stmt->execute();
-        $user = $result->fetchArray(SQLITE3_ASSOC);
-
-        if ($user && password_verify($password, $user['password'])) {
-            $_SESSION['admin_logged_in'] = true;
-            $_SESSION['admin_username'] = $username;
-            header('Location: index.php');
-            exit();
-        } else {
-            $error = 'Invalid username or password';
+        $admins = readJSON('admin');
+        $adminFound = false;
+        
+        foreach ($admins as $admin) {
+            if ($admin['username'] === $username && password_verify($password, $admin['password'])) {
+                $_SESSION['admin_logged_in'] = true;
+                $_SESSION['admin_username'] = $username;
+                header('Location: index.php');
+                exit();
+            }
         }
+        
+        $error = 'Invalid username or password';
     } else {
         $error = 'Please enter username and password';
     }
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form method="POST">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
+                <input type="text" id="username" name="username" required autofocus>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>

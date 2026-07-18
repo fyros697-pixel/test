@@ -5,51 +5,85 @@ require_once '../api/auth.php';
 requireAdminLogin();
 
 $message = '';
+$error = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
+        $orders = readJSON('orders');
+        
         if ($_POST['action'] === 'create') {
             $orderNumber = $_POST['order_number'] ?? '';
             $customerName = $_POST['customer_name'] ?? '';
             $description = $_POST['description'] ?? '';
             
             if ($orderNumber && $customerName) {
-                $stmt = $db->getConnection()->prepare('INSERT INTO orders (order_number, customer_name, description) VALUES (:order_number, :customer_name, :description)');
-                $stmt->bindValue(':order_number', $orderNumber, SQLITE3_TEXT);
-                $stmt->bindValue(':customer_name', $customerName, SQLITE3_TEXT);
-                $stmt->bindValue(':description', $description, SQLITE3_TEXT);
-                if ($stmt->execute()) {
+                // Check for duplicate order number
+                $exists = array_filter($orders, fn($o) => $o['order_number'] === $orderNumber);
+                if (empty($exists)) {
+                    $orders[] = [
+                        'id' => getNextId('orders'),
+                        'order_number' => $orderNumber,
+                        'customer_name' => $customerName,
+                        'description' => $description,
+                        'status' => 'pending',
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ];
+                    writeJSON('orders', $orders);
                     $message = 'Order created successfully';
+                } else {
+                    $error = 'Order number already exists';
                 }
             }
         } elseif ($_POST['action'] === 'update_status') {
             $orderId = $_POST['order_id'] ?? 0;
             $status = $_POST['status'] ?? '';
             if ($orderId && $status) {
-                $stmt = $db->getConnection()->prepare('UPDATE orders SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id');
-                $stmt->bindValue(':status', $status, SQLITE3_TEXT);
-                $stmt->bindValue(':id', $orderId, SQLITE3_NUM);
-                $stmt->execute();
+                foreach ($orders as &$order) {
+                    if ($order['id'] == $orderId) {
+                        $order['status'] = $status;
+                        $order['updated_at'] = date('Y-m-d H:i:s');
+                    }
+                }
+                writeJSON('orders', $orders);
                 $message = 'Order updated successfully';
             }
         } elseif ($_POST['action'] === 'delete') {
             $orderId = $_POST['order_id'] ?? 0;
             if ($orderId) {
-                $db->exec("DELETE FROM materials WHERE order_id = $orderId");
-                $db->exec("DELETE FROM order_assignments WHERE order_id = $orderId");
-                $db->exec("DELETE FROM orders WHERE id = $orderId");
+                $orders = array_filter($orders, fn($o) => $o['id'] != $orderId);
+                writeJSON('orders', $orders);
+                
+                // Delete related materials and assignments
+                $materials = readJSON('materials');
+                $materials = array_filter($materials, fn($m) => $m['order_id'] != $orderId);
+                writeJSON('materials', $materials);
+                
+                $assignments = readJSON('order_assignments');
+                $assignments = array_filter($assignments, fn($a) => $a['order_id'] != $orderId);
+                writeJSON('order_assignments', $assignments);
+                
                 $message = 'Order deleted successfully';
             }
         } elseif ($_POST['action'] === 'assign_worker') {
             $orderId = $_POST['order_id'] ?? 0;
             $workerId = $_POST['worker_id'] ?? 0;
             if ($orderId && $workerId) {
-                $stmt = $db->getConnection()->prepare('INSERT INTO order_assignments (order_id, worker_id) VALUES (:order_id, :worker_id)');
-                $stmt->bindValue(':order_id', $orderId, SQLITE3_NUM);
-                $stmt->bindValue(':worker_id', $workerId, SQLITE3_NUM);
-                if ($stmt->execute()) {
+                $assignments = readJSON('order_assignments');
+                // Check if already assigned
+                $exists = array_filter($assignments, fn($a) => $a['order_id'] == $orderId && $a['worker_id'] == $workerId);
+                if (empty($exists)) {
+                    $assignments[] = [
+                        'id' => getNextId('order_assignments'),
+                        'order_id' => $orderId,
+                        'worker_id' => $workerId,
+                        'assigned_at' => date('Y-m-d H:i:s')
+                    ];
+                    writeJSON('order_assignments', $assignments);
                     $message = 'Worker assigned successfully';
+                } else {
+                    $error = 'Worker already assigned to this order';
                 }
             }
         }
@@ -57,18 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get all orders
-$result = $db->query('SELECT * FROM orders ORDER BY created_at DESC');
-$orders = [];
-while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-    $orders[] = $row;
-}
-
-// Get all workers
-$workerResult = $db->query('SELECT * FROM workers WHERE status = "active" ORDER BY name');
-$workers = [];
-while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
-    $workers[] = $row;
-}
+$orders = readJSON('orders');
+$workers = readJSON('workers');
+$workers = array_filter($workers, fn($w) => $w['status'] === 'active');
 ?>
 <!DOCTYPE html>
 <html>
@@ -108,6 +133,14 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
             background: #d4edda;
             border: 1px solid #c3e6cb;
             color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
             padding: 12px;
             border-radius: 4px;
             margin-bottom: 20px;
@@ -185,30 +218,6 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
         .order-table tr:hover {
             background: #f9f9f9;
         }
-        .status {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .status.pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-        .status.in-progress {
-            background: #cfe2ff;
-            color: #084298;
-        }
-        .status.completed {
-            background: #d1e7dd;
-            color: #0f5132;
-        }
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }
         .order-actions {
             display: flex;
             gap: 10px;
@@ -218,10 +227,10 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
             padding: 8px 12px;
             font-size: 12px;
         }
-        h3 {
-            margin-top: 20px;
-            margin-bottom: 10px;
-            color: #333;
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
         }
     </style>
 </head>
@@ -239,6 +248,9 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
     <div class="container">
         <?php if ($message): ?>
             <div class="message"><?php echo htmlspecialchars($message); ?></div>
+        <?php endif; ?>
+        <?php if ($error): ?>
+            <div class="error"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
 
         <div class="form-section">
@@ -271,7 +283,6 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
                         <tr>
                             <th>Order #</th>
                             <th>Customer</th>
-                            <th>Description</th>
                             <th>Status</th>
                             <th>Created</th>
                             <th>Actions</th>
@@ -282,7 +293,6 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($order['order_number']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
-                                <td><?php echo htmlspecialchars(substr($order['description'], 0, 50)); ?></td>
                                 <td>
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="action" value="update_status">
@@ -297,17 +307,19 @@ while ($row = $workerResult->fetchArray(SQLITE3_ASSOC)) {
                                 <td><?php echo date('d.m.Y', strtotime($order['created_at'])); ?></td>
                                 <td>
                                     <div class="order-actions">
-                                        <form method="POST" style="display: inline;">
-                                            <input type="hidden" name="action" value="assign_worker">
-                                            <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                                            <select name="worker_id" required>
-                                                <option value="">Assign Worker</option>
-                                                <?php foreach ($workers as $worker): ?>
-                                                    <option value="<?php echo $worker['id']; ?>"><?php echo htmlspecialchars($worker['name']); ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                            <button type="submit" style="padding: 5px 10px; font-size: 11px;">Assign</button>
-                                        </form>
+                                        <?php if ($workers): ?>
+                                            <form method="POST" style="display: inline;">
+                                                <input type="hidden" name="action" value="assign_worker">
+                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                <select name="worker_id" required>
+                                                    <option value="">Assign</option>
+                                                    <?php foreach ($workers as $worker): ?>
+                                                        <option value="<?php echo $worker['id']; ?>"><?php echo htmlspecialchars($worker['name']); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                                <button type="submit" style="padding: 5px 10px; font-size: 11px;">Add</button>
+                                            </form>
+                                        <?php endif; ?>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this order?');">
                                             <input type="hidden" name="action" value="delete">
                                             <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">

@@ -5,10 +5,13 @@ require_once '../api/auth.php';
 requireAdminLogin();
 
 $message = '';
+$error = '';
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
+        $materials = readJSON('materials');
+        
         if ($_POST['action'] === 'add') {
             $orderId = $_POST['order_id'] ?? 0;
             $materialName = $_POST['material_name'] ?? '';
@@ -16,44 +19,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $unit = $_POST['unit'] ?? 'pcs';
             
             if ($orderId && $materialName) {
-                $stmt = $db->getConnection()->prepare('INSERT INTO materials (order_id, material_name, quantity, unit) VALUES (:order_id, :material_name, :quantity, :unit)');
-                $stmt->bindValue(':order_id', $orderId, SQLITE3_NUM);
-                $stmt->bindValue(':material_name', $materialName, SQLITE3_TEXT);
-                $stmt->bindValue(':quantity', $quantity, SQLITE3_NUM);
-                $stmt->bindValue(':unit', $unit, SQLITE3_TEXT);
-                if ($stmt->execute()) {
-                    $message = 'Material added successfully';
-                }
+                $materials[] = [
+                    'id' => getNextId('materials'),
+                    'order_id' => $orderId,
+                    'material_name' => $materialName,
+                    'quantity' => $quantity,
+                    'unit' => $unit,
+                    'purchased' => false,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+                writeJSON('materials', $materials);
+                $message = 'Material added successfully';
             }
         } elseif ($_POST['action'] === 'mark_purchased') {
             $materialId = $_POST['material_id'] ?? 0;
             if ($materialId) {
-                $db->exec("UPDATE materials SET purchased = 1 WHERE id = $materialId");
+                foreach ($materials as &$material) {
+                    if ($material['id'] == $materialId) {
+                        $material['purchased'] = true;
+                    }
+                }
+                writeJSON('materials', $materials);
                 $message = 'Material marked as purchased';
             }
         } elseif ($_POST['action'] === 'delete') {
             $materialId = $_POST['material_id'] ?? 0;
             if ($materialId) {
-                $db->exec("DELETE FROM materials WHERE id = $materialId");
+                $materials = array_filter($materials, fn($m) => $m['id'] != $materialId);
+                writeJSON('materials', $materials);
                 $message = 'Material deleted';
             }
         }
     }
 }
 
-// Get all orders
-$orderResult = $db->query('SELECT id, order_number FROM orders ORDER BY order_number');
-$orders = [];
-while ($row = $orderResult->fetchArray(SQLITE3_ASSOC)) {
-    $orders[] = $row;
-}
-
-// Get all unpurchased materials
-$materialResult = $db->query('SELECT m.*, o.order_number FROM materials m JOIN orders o ON m.order_id = o.id WHERE m.purchased = 0 ORDER BY m.created_at DESC');
-$materials = [];
-while ($row = $materialResult->fetchArray(SQLITE3_ASSOC)) {
-    $materials[] = $row;
-}
+// Get all orders and materials
+$orders = readJSON('orders');
+$materials = readJSON('materials');
+$unpurchasedMaterials = array_filter($materials, fn($m) => $m['purchased'] === false);
 ?>
 <!DOCTYPE html>
 <html>
@@ -93,6 +96,14 @@ while ($row = $materialResult->fetchArray(SQLITE3_ASSOC)) {
             background: #d4edda;
             border: 1px solid #c3e6cb;
             color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
             padding: 12px;
             border-radius: 4px;
             margin-bottom: 20px;
@@ -203,6 +214,9 @@ while ($row = $materialResult->fetchArray(SQLITE3_ASSOC)) {
         <?php if ($message): ?>
             <div class="message"><?php echo htmlspecialchars($message); ?></div>
         <?php endif; ?>
+        <?php if ($error): ?>
+            <div class="error"><?php echo htmlspecialchars($error); ?></div>
+        <?php endif; ?>
 
         <div class="form-section">
             <h2>Add Material to Order</h2>
@@ -246,7 +260,7 @@ while ($row = $materialResult->fetchArray(SQLITE3_ASSOC)) {
 
         <div class="form-section">
             <h2>Materials to Purchase</h2>
-            <?php if ($materials): ?>
+            <?php if ($unpurchasedMaterials): ?>
                 <table class="material-table">
                     <thead>
                         <tr>
@@ -258,9 +272,12 @@ while ($row = $materialResult->fetchArray(SQLITE3_ASSOC)) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($materials as $material): ?>
+                        <?php foreach ($unpurchasedMaterials as $material): 
+                            $order = array_filter($orders, fn($o) => $o['id'] == $material['order_id']);
+                            $order = reset($order);
+                        ?>
                             <tr>
-                                <td><strong><?php echo htmlspecialchars($material['order_number']); ?></strong></td>
+                                <td><strong><?php echo htmlspecialchars($order['order_number']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($material['material_name']); ?></td>
                                 <td><?php echo $material['quantity'] . ' ' . htmlspecialchars($material['unit']); ?></td>
                                 <td><?php echo date('d.m.Y', strtotime($material['created_at'])); ?></td>

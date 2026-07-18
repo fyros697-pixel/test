@@ -10,11 +10,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $workerId = $_POST['worker_id'] ?? 0;
 
     if ($workerId) {
-        $stmt = $db->getConnection()->prepare('SELECT * FROM workers WHERE id = :id AND status = :status');
-        $stmt->bindValue(':id', $workerId, SQLITE3_NUM);
-        $stmt->bindValue(':status', 'active', SQLITE3_TEXT);
-        $result = $stmt->execute();
-        $worker = $result->fetchArray(SQLITE3_ASSOC);
+        $workers = readJSON('workers');
+        $worker = null;
+        foreach ($workers as $w) {
+            if ($w['id'] == $workerId && $w['status'] === 'active') {
+                $worker = $w;
+                break;
+            }
+        }
 
         if ($worker) {
             $_SESSION['worker_id'] = $worker['id'];
@@ -30,11 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get all active workers
-$result = $db->query('SELECT id, name FROM workers WHERE status = "active" ORDER BY name');
-$workers = [];
-while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-    $workers[] = $row;
-}
+$workers = readJSON('workers');
+$activeWorkers = array_filter($workers, fn($w) => $w['status'] === 'active');
 ?>
 <!DOCTYPE html>
 <html>
@@ -139,13 +139,13 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             <div class="error"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
         
-        <?php if ($workers): ?>
+        <?php if ($activeWorkers): ?>
             <form method="POST">
                 <div class="form-group">
                     <label for="worker_id">Select Your Name</label>
                     <select id="worker_id" name="worker_id" required autofocus>
                         <option value="">-- Choose your name --</option>
-                        <?php foreach ($workers as $worker): ?>
+                        <?php foreach ($activeWorkers as $worker): ?>
                             <option value="<?php echo $worker['id']; ?>"><?php echo htmlspecialchars($worker['name']); ?></option>
                         <?php endforeach; ?>
                     </select>

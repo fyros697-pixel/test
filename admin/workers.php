@@ -10,28 +10,38 @@ $error = '';
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
+        $workers = readJSON('workers');
+        
         if ($_POST['action'] === 'create') {
             // Check worker limit
-            $workerCount = $db->querySingle("SELECT COUNT(*) FROM workers WHERE status = 'active'");
-            if ($workerCount >= 5) {
+            $activeCount = count(array_filter($workers, fn($w) => $w['status'] === 'active'));
+            if ($activeCount >= 5) {
                 $error = 'Maximum 5 workers allowed';
             } else {
                 $name = $_POST['name'] ?? '';
                 $email = $_POST['email'] ?? '';
                 
                 if ($name) {
-                    $stmt = $db->getConnection()->prepare('INSERT INTO workers (name, email) VALUES (:name, :email)');
-                    $stmt->bindValue(':name', $name, SQLITE3_TEXT);
-                    $stmt->bindValue(':email', $email, SQLITE3_TEXT);
-                    if ($stmt->execute()) {
-                        $message = 'Worker created successfully';
-                    }
+                    $workers[] = [
+                        'id' => getNextId('workers'),
+                        'name' => $name,
+                        'email' => $email,
+                        'status' => 'active',
+                        'created_at' => date('Y-m-d H:i:s')
+                    ];
+                    writeJSON('workers', $workers);
+                    $message = 'Worker created successfully';
                 }
             }
         } elseif ($_POST['action'] === 'delete') {
             $workerId = $_POST['worker_id'] ?? 0;
             if ($workerId) {
-                $db->exec("UPDATE workers SET status = 'inactive' WHERE id = $workerId");
+                foreach ($workers as &$worker) {
+                    if ($worker['id'] == $workerId) {
+                        $worker['status'] = 'inactive';
+                    }
+                }
+                writeJSON('workers', $workers);
                 $message = 'Worker deactivated';
             }
         }
@@ -39,11 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get all active workers
-$result = $db->query('SELECT * FROM workers WHERE status = "active" ORDER BY name');
-$workers = [];
-while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-    $workers[] = $row;
-}
+$workers = readJSON('workers');
+$activeWorkers = array_filter($workers, fn($w) => $w['status'] === 'active');
 ?>
 <!DOCTYPE html>
 <html>
@@ -197,8 +204,8 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 
         <div class="form-section">
             <h2>Add New Worker</h2>
-            <div class="worker-count"><?php echo count($workers); ?>/5 Workers</div>
-            <?php if (count($workers) < 5): ?>
+            <div class="worker-count"><?php echo count($activeWorkers); ?>/5 Workers</div>
+            <?php if (count($activeWorkers) < 5): ?>
                 <form method="POST">
                     <input type="hidden" name="action" value="create">
                     <div class="form-group">
@@ -218,9 +225,9 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 
         <div class="form-section">
             <h2>Active Workers</h2>
-            <?php if ($workers): ?>
+            <?php if ($activeWorkers): ?>
                 <div class="workers-list">
-                    <?php foreach ($workers as $worker): ?>
+                    <?php foreach ($activeWorkers as $worker): ?>
                         <div class="worker-item">
                             <div class="worker-info">
                                 <h3><?php echo htmlspecialchars($worker['name']); ?></h3>

@@ -8,18 +8,20 @@ $workerId = $_SESSION['worker_id'];
 $workerName = $_SESSION['worker_name'];
 
 // Get assigned orders for this worker
-$stmt = $db->getConnection()->prepare(
-    'SELECT o.id, o.order_number, o.customer_name, o.description, o.status, o.created_at 
-     FROM orders o 
-     JOIN order_assignments oa ON o.id = oa.order_id 
-     WHERE oa.worker_id = :worker_id 
-     ORDER BY o.created_at DESC'
-);
-$stmt->bindValue(':worker_id', $workerId, SQLITE3_NUM);
-$result = $stmt->execute();
-$orders = [];
-while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-    $orders[] = $row;
+$assignments = readJSON('order_assignments');
+$orders = readJSON('orders');
+$materials = readJSON('materials');
+
+$workerOrders = [];
+foreach ($assignments as $assignment) {
+    if ($assignment['worker_id'] == $workerId) {
+        foreach ($orders as $order) {
+            if ($order['id'] == $assignment['order_id']) {
+                $workerOrders[] = $order;
+                break;
+            }
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -119,7 +121,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             background: #fff3cd;
             color: #856404;
         }
-        .status.in-progress {
+        .status.inprogress {
             background: #cfe2ff;
             color: #084298;
         }
@@ -195,25 +197,17 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
         <div class="orders-section">
             <h2>📋 My Assigned Orders</h2>
             
-            <?php if ($orders): ?>
-                <?php foreach ($orders as $order): ?>
+            <?php if ($workerOrders): ?>
+                <?php foreach ($workerOrders as $order): ?>
                     <?php 
                     // Get materials for this order
-                    $materialStmt = $db->getConnection()->prepare(
-                        'SELECT material_name, quantity, unit FROM materials WHERE order_id = :order_id AND purchased = 0'
-                    );
-                    $materialStmt->bindValue(':order_id', $order['id'], SQLITE3_NUM);
-                    $materialResult = $materialStmt->execute();
-                    $materials = [];
-                    while ($mat = $materialResult->fetchArray(SQLITE3_ASSOC)) {
-                        $materials[] = $mat;
-                    }
+                    $orderMaterials = array_filter($materials, fn($m) => $m['order_id'] == $order['id'] && $m['purchased'] === false);
                     ?>
                     <div class="order-card">
                         <div class="order-header">
                             <div class="order-number"><?php echo htmlspecialchars($order['order_number']); ?></div>
                             <span class="status <?php echo str_replace('-', '', $order['status']); ?>">
-                                <?php echo ucfirst($order['status']); ?>
+                                <?php echo ucfirst(str_replace('-', ' ', $order['status'])); ?>
                             </span>
                         </div>
 
@@ -232,10 +226,10 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                             </div>
                         </div>
 
-                        <?php if ($materials): ?>
+                        <?php if ($orderMaterials): ?>
                             <div class="materials-section">
                                 <h4>📦 Materials Needed:</h4>
-                                <?php foreach ($materials as $material): ?>
+                                <?php foreach ($orderMaterials as $material): ?>
                                     <div class="material-item">
                                         <div class="material-info"><?php echo htmlspecialchars($material['material_name']); ?></div>
                                         <div class="material-qty"><?php echo $material['quantity'] . ' ' . htmlspecialchars($material['unit']); ?></div>

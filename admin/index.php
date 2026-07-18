@@ -5,10 +5,14 @@ require_once '../api/auth.php';
 requireAdminLogin();
 
 // Get dashboard stats
-$totalOrders = $db->querySingle("SELECT COUNT(*) FROM orders");
-$pendingOrders = $db->querySingle("SELECT COUNT(*) FROM orders WHERE status = 'pending'");
-$totalWorkers = $db->querySingle("SELECT COUNT(*) FROM workers");
-$totalMaterials = $db->querySingle("SELECT COUNT(*) FROM materials WHERE purchased = 0");
+$orders = readJSON('orders');
+$workers = readJSON('workers');
+$materials = readJSON('materials');
+
+$totalOrders = count($orders);
+$pendingOrders = count(array_filter($orders, fn($o) => $o['status'] === 'pending'));
+$activeWorkers = count(array_filter($workers, fn($w) => $w['status'] === 'active'));
+$unpurchasedMaterials = count(array_filter($materials, fn($m) => $m['purchased'] === false));
 ?>
 <!DOCTYPE html>
 <html>
@@ -125,11 +129,11 @@ $totalMaterials = $db->querySingle("SELECT COUNT(*) FROM materials WHERE purchas
             </div>
             <div class="stat-card">
                 <h3>Active Workers</h3>
-                <div class="number"><?php echo $totalWorkers; ?></div>
+                <div class="number"><?php echo $activeWorkers; ?></div>
             </div>
             <div class="stat-card">
                 <h3>Materials to Buy</h3>
-                <div class="number"><?php echo $totalMaterials; ?></div>
+                <div class="number"><?php echo $unpurchasedMaterials; ?></div>
             </div>
         </div>
 
